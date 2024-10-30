@@ -15,9 +15,9 @@ sudo apt install libsfml-dev
 A Sony a6000 .ARW file is a TIFF file, so if you need to manually read one, start here:\
 https://www.itu.int/itudoc/itu-t/com16/tiff-fx/docs/tiff6.pdf ([archive](https://web.archive.org/web/20240926225851/https://www.itu.int/itudoc/itu-t/com16/tiff-fx/docs/tiff6.pdf))
 
-https://exiftool.org/TagNames/Sony.html#Ericsson
-
 Despite being under the "Sony Ericsson Tags" section, Sony a6000 .ARW files contain the following:
+
+https://exiftool.org/TagNames/Sony.html#Ericsson
 
 Tag ID `0x0201` (JPEG preview image start offset in bytes)\
 Tag ID `0x0202` (JPEG preview image length in bytes)
