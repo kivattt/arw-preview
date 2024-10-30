@@ -14,8 +14,11 @@
 
 using std::string;
 
+const string version = "1.0.0";
+
 void usage(string programName) {
-	std::cout << "Usage: " << programName << " [.ARW file]\n";
+	std::cout << "Usage: " << programName << " [.ARW file]" << std::endl;
+	std::cout << "arw-preview " << version << std::endl;
 }
 
 void cleanup(int fd, char *data, int fileSize) {
@@ -219,6 +222,7 @@ int main(int argc, char *argv[]) {
 	previewSprite.setTexture(previewTexture);
 
 	sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), base_path(argv[1]));
+	window.setVerticalSyncEnabled(true);
 
 	while (window.isOpen()) {
 		sf::Event event;
