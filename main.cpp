@@ -66,6 +66,14 @@ sf::View get_letterbox_view(sf::View view, int windowWidth, int windowHeight) {
     return view;
 }
 
+// Returns last part of a slash-separated path
+string base_path(string path) {
+	size_t lastSlashIdx = path.rfind('/');
+	if (lastSlashIdx == string::npos)
+		return path;
+	return path.substr(lastSlashIdx+1);
+}
+
 int main(int argc, char *argv[]) {
 	if (argc < 2) {
 		usage(argv[0]);
@@ -73,34 +81,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	char *data;
-	int exitCode = 0;
-	struct stat fi;
 	off_t fileSize;
-	unsigned short numDirEntries;
-	unsigned int firstIFDOffset, IFDOffset;
-
-	sf::Texture previewTexture;
-	sf::Sprite previewSprite;
-	sf::View view;
-	sf::Image previewImage;
-	unsigned int previewImageStart, previewImageLength;
-
-	// See "Types" in https://www.itu.int/itudoc/itu-t/com16/tiff-fx/docs/tiff6.pdf
-	std::map<unsigned short, int> typeToByteCount = {
-		{1, 1}, // BYTE
-		{2, 2}, // ASCII (+ 1 NUL byte)
-		{3, 2}, // SHORT
-		{4, 4}, // LONG
-		{5, 8}, // RATIONAL (2 * LONG)
-	};
-
-	std::map<unsigned short, string> typeToName = {
-		{1, "BYTE"},
-		{2, "ASCII"},
-		{3, "SHORT"},
-		{4, "LONG"},
-		{5, "RATIONAL"},
-	};
 
 	int fd = open(argv[1], O_RDONLY);
 	if (fd == -1) {
@@ -109,8 +90,15 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	struct stat fi;
 	if (fstat(fd, &fi) == -1) {
 		std::cerr << "Unable to fstat path: \"" << argv[1] << "\"\n";
+		cleanup(fd, data, fileSize);
+		return 1;
+	}
+
+	if ((fi.st_mode & S_IFMT) != S_IFREG) {
+		std::cerr << "Not a regular file: \"" << argv[1] << "\"\n";
 		cleanup(fd, data, fileSize);
 		return 1;
 	}
@@ -131,6 +119,31 @@ int main(int argc, char *argv[]) {
 		return 0;
 	}
 
+	unsigned int firstIFDOffset, IFDOffset;
+
+	sf::Texture previewTexture;
+	sf::Sprite previewSprite;
+	sf::View view;
+	sf::Image previewImage;
+	unsigned int previewImageStart, previewImageLength;
+
+	// See "Types" in https://www.itu.int/itudoc/itu-t/com16/tiff-fx/docs/tiff6.pdf
+	std::map<unsigned short, int> typeToByteCount = {
+		{1, 1}, // BYTE
+		{2, 2}, // ASCII (+ 1 NUL byte)
+		{3, 2}, // SHORT
+		{4, 4}, // LONG
+		{5, 8}, // RATIONAL (2 * LONG)
+	};
+
+	/*std::map<unsigned short, string> typeToName = {
+		{1, "BYTE"},
+		{2, "ASCII"},
+		{3, "SHORT"},
+		{4, "LONG"},
+		{5, "RATIONAL"},
+	};*/
+
 	firstIFDOffset = read_uint32(data+4);
 	IFDOffset = firstIFDOffset;
 
@@ -145,7 +158,7 @@ int main(int argc, char *argv[]) {
 			return 0;
 		}
 
-		numDirEntries = read_uint16(data+IFDOffset);
+		unsigned short numDirEntries = read_uint16(data+IFDOffset);
 		//std::cout << numDirEntries << " directory entries\n\n";
 
 		for (int i = 0; i < numDirEntries; i++) { // 12-byte directory entries
@@ -160,7 +173,7 @@ int main(int argc, char *argv[]) {
 			bool valueOffsetIsValue = valueSize <= 4;
 
 			
-			string typeName = typeToName[type];
+			//string typeName = typeToName[type];
 			if (valueOffsetIsValue) {
 				if (tag == 513) {
 					previewImageStart = valueOffset;
@@ -200,9 +213,10 @@ int main(int argc, char *argv[]) {
 	view = get_letterbox_view(view, WIDTH, HEIGHT);
 
 	previewTexture.loadFromImage(previewImage);
+	previewTexture.setSmooth(true);
 	previewSprite.setTexture(previewTexture);
 
-	sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), "arw-preview " + string(argv[1]));
+	sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), base_path(argv[1]));
 
 	while (window.isOpen()) {
 		sf::Event event;
@@ -220,7 +234,7 @@ int main(int argc, char *argv[]) {
 			}
 		}
 
-		window.clear(sf::Color(52,52,52));
+		window.clear(sf::Color(53,53,53));
 		window.setView(view);
 		window.draw(previewSprite);
 		window.display();

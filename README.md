@@ -1,6 +1,9 @@
-# Preview Sony Alpha a6000 .ARW image files on Linux
+This shows the JPEG preview image embedded within an .ARW file
 
-# Building
+## Controls
+`Escape` or `q` exit
+
+## Building
 ```console
 sudo apt install libsfml-dev
 ./compile.sh
