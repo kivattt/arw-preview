@@ -45,7 +45,7 @@ $ exiftool -s -hex example.ARW | grep -E "(0x0201|0x0202)"
 Once as preview image, second as thumbnail. This program just reads the first IFD in the file, which contains the PreviewImageStart and PreviewImageLength. (presumably the highest resolution JPEG preview stored in the file)
 
 Description of multiple Sony RAW file formats:\
-https://github.com/lclevy/sony_raw/tree/main?tab=readme-ov-file
+https://github.com/lclevy/sony_raw
 
 ## Too long, didn't read
 - Loads the .ARW file into memory (mmap)
