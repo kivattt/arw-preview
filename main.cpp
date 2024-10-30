@@ -208,6 +208,8 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	cleanup(fd, data, fileSize);
+
 	view.setSize(WIDTH, HEIGHT);
 	view.setCenter(view.getSize().x/2, view.getSize().y/2);
 	view = get_letterbox_view(view, WIDTH, HEIGHT);
@@ -240,6 +242,5 @@ int main(int argc, char *argv[]) {
 		window.display();
 	}
 
-	cleanup(fd, data, fileSize);
 	return 0;
 }
