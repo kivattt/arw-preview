@@ -8,6 +8,7 @@ Specifically written for .ARW files made by the [Sony a6000](https://en.wikipedi
 ```console
 sudo apt install libsfml-dev
 ./compile.sh
+./arw-preview example.ARW
 ```
 
 ## Sony .ARW file format resources
