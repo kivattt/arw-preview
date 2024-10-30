@@ -4,6 +4,8 @@ Specifically written for .ARW files made by the [Sony a6000](https://en.wikipedi
 ## Controls
 `Escape` or `q` to exit
 
+<img src="screenshot.png" alt="arw-preview showing a JPEG preview of a .ARW file">
+
 ## Building
 ```console
 sudo apt install libsfml-dev
