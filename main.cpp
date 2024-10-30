@@ -14,7 +14,7 @@
 
 using std::string;
 
-const string version = "1.0.0";
+const string version = "1.0.1";
 
 void usage(string programName) {
 	std::cout << "Usage: " << programName << " [.ARW file]" << std::endl;
@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
 	if (strncmp(data, "II\x2a\x00", 4) != 0) {
 		std::cout << "Invalid header, not a little-endian TIFF file\n";
 		cleanup(fd, data, fileSize);
-		return 0;
+		return 1;
 	}
 
 	unsigned int firstIFDOffset, IFDOffset;
