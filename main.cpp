@@ -1,4 +1,5 @@
 #include <iostream>
+#include <chrono>
 #include <SFML/Graphics.hpp>
 #include <map>
 #include <string>
@@ -14,7 +15,7 @@
 
 using std::string;
 
-const string version = "1.0.1";
+const string version = "1.0.2";
 
 void usage(string programName) {
 	std::cout << "Usage: " << programName << " [.ARW file]" << std::endl;
@@ -77,58 +78,46 @@ string base_path(string path) {
 	return path.substr(lastSlashIdx+1);
 }
 
-int main(int argc, char *argv[]) {
-	if (argc < 2) {
-		usage(argv[0]);
-		return 0;
-	}
-
-	char *data;
-	off_t fileSize;
-
-	int fd = open(argv[1], O_RDONLY);
-	if (fd == -1) {
-		std::cerr << "Unable to open path: \"" << argv[1] << "\"\n";
-		cleanup(fd, data, fileSize);
+// Returns an exit code, 0 = Success, 1 = Failure, 2 = Failure but exit with 0
+int get_jpeg_image_preview(char *arwFilePath,
+                           int &arwFileDescriptor,
+                           off_t &arwFileSize,
+                           char **arwData,
+                           unsigned int &previewImageStart,
+                           unsigned int &previewImageLength)
+{
+	arwFileDescriptor = open(arwFilePath, O_RDONLY);
+	if (arwFileDescriptor == -1) {
+		std::cerr << "Unable to open path: \"" << arwFilePath << "\"\n";
 		return 1;
 	}
 
 	struct stat fi;
-	if (fstat(fd, &fi) == -1) {
-		std::cerr << "Unable to fstat path: \"" << argv[1] << "\"\n";
-		cleanup(fd, data, fileSize);
+	if (fstat(arwFileDescriptor, &fi) == -1) {
+		std::cerr << "Unable to fstat path: \"" << arwFilePath << "\"\n";
 		return 1;
 	}
 
 	if ((fi.st_mode & S_IFMT) != S_IFREG) {
-		std::cerr << "Not a regular file: \"" << argv[1] << "\"\n";
-		cleanup(fd, data, fileSize);
+		std::cerr << "Not a regular file: \"" << arwFilePath << "\"\n";
 		return 1;
 	}
 
-	fileSize = fi.st_size;
+	arwFileSize = fi.st_size;
 
-	if (fileSize == 0) {
+	if (arwFileSize == 0) {
 		std::cout << "File was empty (0 bytes)\n";
-		cleanup(fd, data, fileSize);
-		return 0;
+		return 2;
 	}
 
-	data = (char*)mmap(NULL, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+	*arwData = (char*)mmap(NULL, arwFileSize, PROT_READ, MAP_SHARED, arwFileDescriptor, 0);
 
-	if (strncmp(data, "II\x2a\x00", 4) != 0) {
+	if (strncmp(*arwData, "II\x2a\x00", 4) != 0) {
 		std::cout << "Invalid header, not a little-endian TIFF file\n";
-		cleanup(fd, data, fileSize);
 		return 1;
 	}
 
 	unsigned int firstIFDOffset, IFDOffset;
-
-	sf::Texture previewTexture;
-	sf::Sprite previewSprite;
-	sf::View view;
-	sf::Image previewImage;
-	unsigned int previewImageStart, previewImageLength;
 
 	// See "Types" in https://www.itu.int/itudoc/itu-t/com16/tiff-fx/docs/tiff6.pdf
 	std::map<unsigned short, int> typeToByteCount = {
@@ -147,7 +136,7 @@ int main(int argc, char *argv[]) {
 		{5, "RATIONAL"},
 	};*/
 
-	firstIFDOffset = read_uint32(data+4);
+	firstIFDOffset = read_uint32(*arwData+4);
 	IFDOffset = firstIFDOffset;
 
 	for (int j = 0; j < 1; j++) { // IFDs (just the first one)
@@ -157,38 +146,36 @@ int main(int argc, char *argv[]) {
 
 		if (IFDOffset % 2 != 0) {
 			//std::cerr << "Found an IFD offset not beginning on a word boundary\n",
-			cleanup(fd, data, fileSize);
-			return 0;
+			return 2;
 		}
 
-		unsigned short numDirEntries = read_uint16(data+IFDOffset);
+		unsigned short numDirEntries = read_uint16(*arwData+IFDOffset);
 		//std::cout << numDirEntries << " directory entries\n\n";
 
 		for (int i = 0; i < numDirEntries; i++) { // 12-byte directory entries
 			unsigned long long offset = IFDOffset + 2 + i*12;
-			unsigned short tag = read_uint16(data+offset);
-			unsigned short type = read_uint16(data+offset+2);
-			unsigned int numValues = read_uint32(data+offset+4);
-			unsigned int valueOffset = read_uint32(data+offset+8);
+			unsigned short tag = read_uint16(*arwData+offset);
+			unsigned short type = read_uint16(*arwData+offset+2);
+			unsigned int numValues = read_uint32(*arwData+offset+4);
+			unsigned int valueOffset = read_uint32(*arwData+offset+8);
 
 			int valueSize = typeToByteCount[type] * numValues;
 
 			bool valueOffsetIsValue = valueSize <= 4;
-
 			
 			//string typeName = typeToName[type];
 			if (valueOffsetIsValue) {
-				if (tag == 513) {
+				if (tag == 0x0201) {
 					previewImageStart = valueOffset;
-				} else if (tag == 514) {
+				} else if (tag == 0x0202) {
 					previewImageLength = valueOffset;
+					return 0;
 					break;
 				}
-//				std::cout << "tag: " << tag << ", type: " << typeName << "(" << valueSize << " bytes)" << ", value: " << valueOffset << '\n';
+				//std::cout << "tag: " << tag << ", type: " << typeName << "(" << valueSize << " bytes)" << ", value: " << valueOffset << '\n';
 			} else {
 				if (valueOffset % 2 != 0) {
-					std::cerr << "Found a value offset not beginning on a word boundary\n",
-					cleanup(fd, data, fileSize);
+					std::cerr << "Found a value offset not beginning on a word boundary\n";
 					return 1;
 				}
 
@@ -197,29 +184,64 @@ int main(int argc, char *argv[]) {
 		}
 		
 		unsigned long long offset = firstIFDOffset + 2 + numDirEntries*12;
-		IFDOffset = read_uint32(data+offset);
-		if (IFDOffset >= fileSize) {
+		IFDOffset = read_uint32(*arwData+offset);
+		if (IFDOffset >= arwFileSize) {
 			break; // Invalid TIFF file ?
 		}
 
 		//std::cout << IFDOffset << '\n';
 	}
 
-	if (!previewImage.loadFromMemory(data+previewImageStart, previewImageLength)) {
-		std::cerr << "Unable to load JPEG preview image from memory\n";
-		cleanup(fd, data, fileSize);
-		return 1;
+	return 0;
+}
+
+int main(int argc, char *argv[]) {
+	if (argc < 2) {
+		usage(argv[0]);
+		return 0;
 	}
 
-	cleanup(fd, data, fileSize);
+	int arwFileDescriptor;
+	off_t arwFileSize;
+	char *arwData;
+	unsigned int previewImageStart, previewImageLength;
 
+	int exitCode = get_jpeg_image_preview(argv[1], arwFileDescriptor, arwFileSize, &arwData, previewImageStart, previewImageLength);
+
+	if (exitCode != 0) {
+		if (exitCode == 2) {
+			cleanup(arwFileDescriptor, arwData, arwFileSize);
+			return 0;
+		}
+
+		cleanup(arwFileDescriptor, arwData, arwFileSize);
+		return exitCode;
+	}
+
+	//auto start = std::chrono::high_resolution_clock::now();
+
+	sf::Texture previewTexture; // This takes 100ms on my machine!
+
+	/*auto end = std::chrono::high_resolution_clock::now();
+	auto timeTakenMillis = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+	std::cout << timeTakenMillis.count() << "ms\n";*/
+
+	if (!previewTexture.loadFromMemory(arwData+previewImageStart, previewImageLength)) {
+		std::cerr << "Unable to load JPEG preview image from memory\n";
+		cleanup(arwFileDescriptor, arwData, arwFileSize);
+		return 1;
+	}
+	previewTexture.setSmooth(true);
+
+	sf::Sprite previewSprite;
+	previewSprite.setTexture(previewTexture);
+
+	cleanup(arwFileDescriptor, arwData, arwFileSize);
+
+	sf::View view;
 	view.setSize(WIDTH, HEIGHT);
 	view.setCenter(view.getSize().x/2, view.getSize().y/2);
 	view = get_letterbox_view(view, WIDTH, HEIGHT);
-
-	previewTexture.loadFromImage(previewImage);
-	previewTexture.setSmooth(true);
-	previewSprite.setTexture(previewTexture);
 
 	sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), base_path(argv[1]));
 	window.setVerticalSyncEnabled(true);
@@ -239,6 +261,7 @@ int main(int argc, char *argv[]) {
 				view = get_letterbox_view(view, event.size.width, event.size.height);
 			}
 		}
+
 
 		window.clear(sf::Color(53,53,53));
 		window.setView(view);
