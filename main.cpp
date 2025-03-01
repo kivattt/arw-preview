@@ -10,12 +10,15 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "async.hpp"
+using namespace myasync;
+
 #define WIDTH 1280
 #define HEIGHT 720
 
 using std::string;
 
-const string version = "1.0.2";
+const string version = "1.0.3";
 
 void usage(string programName) {
 	std::cout << "Usage: " << programName << " [.ARW file]" << std::endl;
@@ -128,14 +131,6 @@ int get_jpeg_image_preview(char *arwFilePath,
 		{5, 8}, // RATIONAL (2 * LONG)
 	};
 
-	/*std::map<unsigned short, string> typeToName = {
-		{1, "BYTE"},
-		{2, "ASCII"},
-		{3, "SHORT"},
-		{4, "LONG"},
-		{5, "RATIONAL"},
-	};*/
-
 	firstIFDOffset = read_uint32(*arwData+4);
 	IFDOffset = firstIFDOffset;
 
@@ -150,7 +145,6 @@ int get_jpeg_image_preview(char *arwFilePath,
 		}
 
 		unsigned short numDirEntries = read_uint16(*arwData+IFDOffset);
-		//std::cout << numDirEntries << " directory entries\n\n";
 
 		for (int i = 0; i < numDirEntries; i++) { // 12-byte directory entries
 			unsigned long long offset = IFDOffset + 2 + i*12;
@@ -163,7 +157,6 @@ int get_jpeg_image_preview(char *arwFilePath,
 
 			bool valueOffsetIsValue = valueSize <= 4;
 			
-			//string typeName = typeToName[type];
 			if (valueOffsetIsValue) {
 				if (tag == 0x0201) {
 					previewImageStart = valueOffset;
@@ -172,14 +165,11 @@ int get_jpeg_image_preview(char *arwFilePath,
 					return 0;
 					break;
 				}
-				//std::cout << "tag: " << tag << ", type: " << typeName << "(" << valueSize << " bytes)" << ", value: " << valueOffset << '\n';
 			} else {
 				if (valueOffset % 2 != 0) {
 					std::cerr << "Found a value offset not beginning on a word boundary\n";
 					return 1;
 				}
-
-				//std::cout << "tag: " << tag << ", type: " << typeName << "(" << valueSize << " bytes)" << ", valueOffset: " << valueOffset << '\n';
 			}
 		}
 		
@@ -188,8 +178,6 @@ int get_jpeg_image_preview(char *arwFilePath,
 		if (IFDOffset >= arwFileSize) {
 			break; // Invalid TIFF file ?
 		}
-
-		//std::cout << IFDOffset << '\n';
 	}
 
 	return 0;
@@ -221,22 +209,30 @@ int main(int argc, char *argv[]) {
 	//auto start = std::chrono::high_resolution_clock::now();
 
 	sf::Texture previewTexture; // This takes 100ms on my machine!
+	previewTexture.setSmooth(true);
+	sf::Sprite previewSprite;
 
 	/*auto end = std::chrono::high_resolution_clock::now();
 	auto timeTakenMillis = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 	std::cout << timeTakenMillis.count() << "ms\n";*/
 
-	if (!previewTexture.loadFromMemory(arwData+previewImageStart, previewImageLength)) {
-		std::cerr << "Unable to load JPEG preview image from memory\n";
+	Async<bool> async;
+	async.set_function([&]() -> bool* {
+		bool *ret = new bool;
+
+		if (!previewTexture.loadFromMemory(arwData+previewImageStart, previewImageLength)) {
+			cleanup(arwFileDescriptor, arwData, arwFileSize);
+			*ret = false;
+			return ret;
+		}
+
+		previewSprite.setTexture(previewTexture);
 		cleanup(arwFileDescriptor, arwData, arwFileSize);
-		return 1;
-	}
-	previewTexture.setSmooth(true);
+		*ret = true;
+		return ret;
+	});
 
-	sf::Sprite previewSprite;
-	previewSprite.setTexture(previewTexture);
-
-	cleanup(arwFileDescriptor, arwData, arwFileSize);
+	async.try_start();
 
 	sf::View view;
 	view.setSize(WIDTH, HEIGHT);
@@ -245,6 +241,8 @@ int main(int argc, char *argv[]) {
 
 	sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), base_path(argv[1]));
 	window.setVerticalSyncEnabled(true);
+
+	bool imageLoaded = false;
 
 	while (window.isOpen()) {
 		sf::Event event;
@@ -262,10 +260,25 @@ int main(int argc, char *argv[]) {
 			}
 		}
 
+		if (! imageLoaded) {
+			async.lock();
+			bool *data = async.get_data();
+			if (data != nullptr) {
+				if (*data) {
+					imageLoaded = true;
+				} else {
+					std::cerr << "Unable to load JPEG preview image from memory\n";
+					return 1;
+				}
+
+				async.reset_data();
+			}
+			async.unlock();
+		}
 
 		window.clear(sf::Color(53,53,53));
 		window.setView(view);
-		window.draw(previewSprite);
+		if (imageLoaded) window.draw(previewSprite);
 		window.display();
 	}
 
