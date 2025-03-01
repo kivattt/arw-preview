@@ -18,7 +18,7 @@ using namespace myasync;
 
 using std::string;
 
-const string version = "1.0.3";
+const string version = "1.0.4";
 
 void usage(string programName) {
 	std::cout << "Usage: " << programName << " [.ARW file]" << std::endl;
@@ -189,50 +189,42 @@ int main(int argc, char *argv[]) {
 		return 0;
 	}
 
-	int arwFileDescriptor;
-	off_t arwFileSize;
-	char *arwData;
-	unsigned int previewImageStart, previewImageLength;
+	Async<std::optional<sf::Texture>> async;
+	async.set_function([&]() -> std::optional<sf::Texture>* {
+		std::optional<sf::Texture>* previewTextureOpt = new std::optional<sf::Texture>();
 
-	int exitCode = get_jpeg_image_preview(argv[1], arwFileDescriptor, arwFileSize, &arwData, previewImageStart, previewImageLength);
+		int arwFileDescriptor;
+		off_t arwFileSize;
+		char *arwData;
+		unsigned int previewImageStart, previewImageLength;
 
-	if (exitCode != 0) {
-		if (exitCode == 2) {
+		int exitCode = get_jpeg_image_preview(argv[1], arwFileDescriptor, arwFileSize, &arwData, previewImageStart, previewImageLength);
+
+		if (exitCode != 0) {
+			if (exitCode == 2) {
+				cleanup(arwFileDescriptor, arwData, arwFileSize);
+				return previewTextureOpt;
+			}
+
 			cleanup(arwFileDescriptor, arwData, arwFileSize);
-			return 0;
+			return previewTextureOpt;
+		}
+
+		previewTextureOpt->emplace();
+		if (! previewTextureOpt->value().loadFromMemory(arwData+previewImageStart, previewImageLength)) {
+			cleanup(arwFileDescriptor, arwData, arwFileSize);
+			previewTextureOpt->reset();
+			return previewTextureOpt;
 		}
 
 		cleanup(arwFileDescriptor, arwData, arwFileSize);
-		return exitCode;
-	}
-
-	//auto start = std::chrono::high_resolution_clock::now();
-
-	sf::Texture previewTexture; // This takes 100ms on my machine!
-	previewTexture.setSmooth(true);
-	sf::Sprite previewSprite;
-
-	/*auto end = std::chrono::high_resolution_clock::now();
-	auto timeTakenMillis = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-	std::cout << timeTakenMillis.count() << "ms\n";*/
-
-	Async<bool> async;
-	async.set_function([&]() -> bool* {
-		bool *ret = new bool;
-
-		if (!previewTexture.loadFromMemory(arwData+previewImageStart, previewImageLength)) {
-			cleanup(arwFileDescriptor, arwData, arwFileSize);
-			*ret = false;
-			return ret;
-		}
-
-		previewSprite.setTexture(previewTexture);
-		cleanup(arwFileDescriptor, arwData, arwFileSize);
-		*ret = true;
-		return ret;
+		previewTextureOpt->value().setSmooth(true);
+		return previewTextureOpt;
 	});
 
-	async.try_start();
+	async.try_start(); // Load the image in another thread
+
+	sf::Sprite previewSprite;
 
 	sf::View view;
 	view.setSize(WIDTH, HEIGHT);
@@ -260,12 +252,16 @@ int main(int argc, char *argv[]) {
 			}
 		}
 
+		window.clear(sf::Color(53,53,53));
+		window.setView(view);
+
 		if (! imageLoaded) {
 			async.lock();
-			bool *data = async.get_data();
+			std::optional<sf::Texture> *data = async.get_data();
 			if (data != nullptr) {
-				if (*data) {
+				if (data->has_value()) {
 					imageLoaded = true;
+					previewSprite.setTexture(data->value());
 				} else {
 					std::cerr << "Unable to load JPEG preview image from memory\n";
 					return 1;
@@ -275,9 +271,6 @@ int main(int argc, char *argv[]) {
 			}
 			async.unlock();
 		}
-
-		window.clear(sf::Color(53,53,53));
-		window.setView(view);
 		if (imageLoaded) window.draw(previewSprite);
 		window.display();
 	}
