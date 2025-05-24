@@ -1,3 +1,5 @@
+I wrote an improved version that opens quicker in Odin, see: [arw-preview2](https://github.com/kivattt/arw-preview2)
+
 This Linux program shows the JPEG preview image embedded within an .ARW file\
 Specifically written for .ARW files made by the [Sony a6000](https://en.wikipedia.org/wiki/Sony_%CE%B16000), it might not work on others
 
